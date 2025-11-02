@@ -104,5 +104,16 @@ public class WeChatServiceImpl implements WeChatService {
             throw new BusinessException("调用微信API失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 获取微信扫码登录二维码图片URL
+     */
+    @Override
+    public String getQrCodeImageUrl(String redirectUri, String state) {
+        // 生成微信网页授权二维码URL
+        String qrCodeUrl = weChatConfig.getQrCodeUrl(redirectUri, state);
+        // 转换为二维码图片URL
+        return weChatConfig.getQrCodeImageUrl(qrCodeUrl);
+    }
 }
 

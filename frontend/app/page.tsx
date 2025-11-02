@@ -1,10 +1,15 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Grid3X3, List, ChevronDown, Plus, Settings, MoreHorizontal, X, User } from "lucide-react"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
+import { Grid3X3, List, ChevronDown, Plus, Settings, MoreHorizontal, X, User, LogOut } from "lucide-react"
 import Link from "next/link"
+import { useAuth } from "@/contexts/AuthContext"
+import { getWeChatAuthUrl, weChatLogin, getWeChatQrCode } from "@/lib/api"
+import { useRouter } from "next/navigation"
 
 interface Notebook {
   id: string
@@ -140,6 +145,59 @@ export default function Homepage() {
   const [renameValue, setRenameValue] = useState("")
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [activeTab, setActiveTab] = useState<"all" | "my" | "featured">("all")
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null)
+  const [qrCodeState, setQrCodeState] = useState<string | null>(null)
+  const [isLoadingQrCode, setIsLoadingQrCode] = useState(false)
+  
+  const { user, login, logout, isAuthenticated } = useAuth()
+  const router = useRouter()
+
+  // 处理微信登录回调
+  const handleWeChatCallback = useCallback(async (code: string, state: string | null) => {
+    try {
+      const response = await weChatLogin(code, state || undefined)
+      
+      if (response.success && response.data) {
+        login(response.data.token, response.data.userInfo)
+        // 清除URL中的code参数
+        router.push('/')
+        setShowLoginModal(false)
+      } else {
+        console.error('登录失败:', response.message)
+        alert('登录失败: ' + response.message)
+      }
+    } catch (error) {
+      console.error('登录错误:', error)
+      alert('登录失败，请重试')
+    } finally {
+      setIsLoggingIn(false)
+    }
+  }, [login, router])
+
+  // 处理微信回调（当用户扫码后，微信会跳转到redirectUri并带上code参数）
+  useEffect(() => {
+    // 从URL中获取code参数（兼容客户端渲染）
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      const code = urlParams.get('code')
+      const state = urlParams.get('state')
+      
+      // 如果URL中有code参数，说明用户已经扫码授权，需要处理登录
+      if (code && !isAuthenticated && !isLoggingIn) {
+        setIsLoggingIn(true)
+        handleWeChatCallback(code, state)
+      }
+    }
+  }, [isAuthenticated, isLoggingIn, handleWeChatCallback])
+
+  // 当关闭登录模态框时，清除二维码状态
+  useEffect(() => {
+    if (!showLoginModal) {
+      setQrCodeUrl(null)
+      setQrCodeState(null)
+    }
+  }, [showLoginModal])
 
   const handleRename = (notebook: Notebook) => {
     setSelectedNotebook(notebook)
@@ -158,9 +216,29 @@ export default function Homepage() {
     console.log("[v0] Deleting notebook:", notebook.id)
   }
 
-  const handleWeChatLogin = () => {
-    console.log("[v0] WeChat login initiated")
-    setShowLoginModal(false)
+  const handleWeChatLogin = async () => {
+    try {
+      setIsLoadingQrCode(true)
+      const redirectUri = `${window.location.origin}/`
+      const response = await getWeChatQrCode(redirectUri)
+      
+      if (response.success && response.data) {
+        setQrCodeUrl(response.data.qrcodeUrl)
+        setQrCodeState(response.data.state)
+      } else {
+        alert('获取微信二维码失败: ' + response.message)
+      }
+    } catch (error) {
+      console.error('获取微信二维码错误:', error)
+      alert('获取二维码失败，请重试')
+    } finally {
+      setIsLoadingQrCode(false)
+    }
+  }
+
+  const handleLogout = () => {
+    logout()
+    router.push('/')
   }
 
   return (
@@ -181,10 +259,39 @@ export default function Homepage() {
             设置
           </Button>
         
-          <Button variant="outline" size="sm" onClick={() => setShowLoginModal(true)}>
-            <User className="w-4 h-4 mr-2" />
-            登录/注册
-          </Button>
+          {isAuthenticated && user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <Avatar className="w-6 h-6">
+                    {user.avatarUrl ? (
+                      <AvatarImage src={user.avatarUrl} alt={user.nickname} />
+                    ) : null}
+                    <AvatarFallback>
+                      {user.nickname.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span>{user.nickname}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5">
+                  <p className="text-sm font-medium">{user.nickname}</p>
+                  <p className="text-xs text-muted-foreground">{user.username}</p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  退出登录
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setShowLoginModal(true)}>
+              <User className="w-4 h-4 mr-2" />
+              登录/注册
+            </Button>
+          )}
         </div>
       </header>
 
@@ -441,22 +548,58 @@ export default function Homepage() {
 
               {/* Content */}
               <div className="p-6 text-center">
-                <div className="mb-6">
-                  <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.162 4.203 2.969 5.543.303.225.485.588.485.976 0 .669-.454 1.286-.454 1.286s1.202-.816 2.91-1.489c.325-.129.668-.086.945.043.839.39 1.787.649 2.836.649 4.8 0 8.691-3.288 8.691-7.342 0-4.054-3.891-7.342-8.691-7.342zm-.84 11.65c-.27 0-.489-.219-.489-.489v-1.956c0-.27.219-.489.489-.489s.489.219.489.489v1.956c0 .27-.219.489-.489.489zm4.8 0c-.27 0-.489-.219-.489-.489v-1.956c0-.27.219-.489.489-.489s.489.219.489.489v1.956c0 .27-.219.489-.489.489z" />
-                    </svg>
-                  </div>
-                  <h4 className="text-lg font-medium mb-2">使用微信登录</h4>
-                  <p className="text-sm text-muted-foreground">点击下方按钮使用微信账号登录或注册</p>
-                </div>
+                {!qrCodeUrl ? (
+                  <>
+                    <div className="mb-6">
+                      <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.162 4.203 2.969 5.543.303.225.485.588.485.976 0 .669-.454 1.286-.454 1.286s1.202-.816 2.91-1.489c.325-.129.668-.086.945.043.839.39 1.787.649 2.836.649 4.8 0 8.691-3.288 8.691-7.342 0-4.054-3.891-7.342-8.691-7.342zm-.84 11.65c-.27 0-.489-.219-.489-.489v-1.956c0-.27.219-.489.489-.489s.489.219.489.489v1.956c0 .27-.219.489-.489.489zm4.8 0c-.27 0-.489-.219-.489-.489v-1.956c0-.27.219-.489.489-.489s.489.219.489.489v1.956c0 .27-.219.489-.489.489z" />
+                        </svg>
+                      </div>
+                      <h4 className="text-lg font-medium mb-2">使用微信登录</h4>
+                      <p className="text-sm text-muted-foreground">点击下方按钮生成二维码，使用微信扫码登录</p>
+                    </div>
 
-                <Button className="w-full bg-green-500 hover:bg-green-600 text-white" onClick={handleWeChatLogin}>
-                  <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.162 4.203 2.969 5.543.303.225.485.588.485.976 0 .669-.454 1.286-.454 1.286s1.202-.816 2.91-1.489c.325-.129.668-.086.945.043.839.39 1.787.649 2.836.649 4.8 0 8.691-3.288 8.691-7.342 0-4.054-3.891-7.342-8.691-7.342zm-.84 11.65c-.27 0-.489-.219-.489-.489v-1.956c0-.27.219-.489.489-.489s.489.219.489.489v1.956c0 .27-.219.489-.489.489zm4.8 0c-.27 0-.489-.219-.489-.489v-1.956c0-.27.219-.489.489-.489s.489.219.489.489v1.956c0 .27-.219.489-.489.489z" />
-                  </svg>
-                  微信登录/注册
-                </Button>
+                    <Button 
+                      className="w-full bg-green-500 hover:bg-green-600 text-white" 
+                      onClick={handleWeChatLogin}
+                      disabled={isLoadingQrCode}
+                    >
+                      <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.162 4.203 2.969 5.543.303.225.485.588.485.976 0 .669-.454 1.286-.454 1.286s1.202-.816 2.91-1.489c.325-.129.668-.086.945.043.839.39 1.787.649 2.836.649 4.8 0 8.691-3.288 8.691-7.342 0-4.054-3.891-7.342-8.691-7.342zm-.84 11.65c-.27 0-.489-.219-.489-.489v-1.956c0-.27.219-.489.489-.489s.489.219.489.489v1.956c0 .27-.219.489-.489.489zm4.8 0c-.27 0-.489-.219-.489-.489v-1.956c0-.27.219-.489.489-.489s.489.219.489.489v1.956c0 .27-.219.489-.489.489z" />
+                      </svg>
+                      {isLoadingQrCode ? '生成中...' : '微信登录/注册'}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-6">
+                      <h4 className="text-lg font-medium mb-2">请使用微信扫码登录</h4>
+                      <p className="text-sm text-muted-foreground mb-4">打开微信扫描下方二维码</p>
+                      <div className="flex justify-center mb-4">
+                        <div className="border-2 border-green-500 p-2 rounded-lg bg-white inline-block">
+                          <img 
+                            src={qrCodeUrl} 
+                            alt="微信登录二维码" 
+                            className="w-64 h-64"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">扫描后请在手机上确认登录</p>
+                    </div>
+
+                    <Button 
+                      variant="outline" 
+                      className="w-full" 
+                      onClick={() => {
+                        setQrCodeUrl(null)
+                        setQrCodeState(null)
+                      }}
+                    >
+                      重新生成二维码
+                    </Button>
+                  </>
+                )}
 
                 <p className="text-xs text-muted-foreground mt-4">登录即表示您同意我们的服务条款和隐私政策</p>
               </div>

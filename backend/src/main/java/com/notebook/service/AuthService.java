@@ -30,4 +30,12 @@ public interface AuthService {
      * @return 认证响应
      */
     AuthResponse handleWeChatCallback(String code, String state);
+
+    /**
+     * 获取微信扫码登录二维码图片URL
+     * @param redirectUri 重定向地址
+     * @param state 状态参数
+     * @return 二维码图片URL
+     */
+    String getWeChatQrCodeImageUrl(String redirectUri, String state);
 }

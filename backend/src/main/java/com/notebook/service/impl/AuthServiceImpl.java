@@ -97,6 +97,14 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /**
+     * 获取微信扫码登录二维码图片URL
+     */
+    @Override
+    public String getWeChatQrCodeImageUrl(String redirectUri, String state) {
+        return weChatService.getQrCodeImageUrl(redirectUri, state);
+    }
+
+    /**
      * 查找或创建用户
      */
     private User findOrCreateUser(WeChatUserInfoResponse weChatUserInfo, WeChatAccessTokenResponse tokenResponse) {

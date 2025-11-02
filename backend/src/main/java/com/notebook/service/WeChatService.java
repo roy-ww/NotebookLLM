@@ -30,4 +30,12 @@ public interface WeChatService {
      * @return 用户信息响应
      */
     WeChatUserInfoResponse getUserInfo(String accessToken, String openId);
+
+    /**
+     * 获取微信扫码登录二维码URL
+     * @param redirectUri 重定向地址
+     * @param state 状态参数
+     * @return 二维码图片URL
+     */
+    String getQrCodeImageUrl(String redirectUri, String state);
 }

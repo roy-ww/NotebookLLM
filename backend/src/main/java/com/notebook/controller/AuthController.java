@@ -99,5 +99,52 @@ public class AuthController {
             return ApiResponse.error("授权失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 获取微信扫码登录二维码
+     * GET /api/auth/wechat/qrcode?redirectUri={redirectUri}
+     * 
+     * 注意：此接口需要使用微信开放平台的"网站应用"AppID
+     * 如果AppID是公众号类型，会出现"scope参数错误"的提示
+     */
+    @GetMapping("/wechat/qrcode")
+    public ApiResponse<Map<String, String>> getWeChatQrCode(
+            @RequestParam(value = "redirectUri", required = false) String redirectUri) {
+        try {
+            // 如果没有提供redirectUri，使用默认的
+            if (redirectUri == null || redirectUri.trim().isEmpty()) {
+                redirectUri = "http://localhost:3000/";
+            }
+
+            // 生成state参数（可以使用UUID确保唯一性）
+            String state = java.util.UUID.randomUUID().toString();
+
+            // 获取二维码图片URL
+            String qrCodeImageUrl = authService.getWeChatQrCodeImageUrl(redirectUri, state);
+            
+            // 同时返回原始的授权URL（用于调试）
+            String authUrl = authService.getWeChatAuthUrl(redirectUri);
+            
+            Map<String, String> result = new HashMap<>();
+            result.put("qrcodeUrl", qrCodeImageUrl);
+            result.put("redirectUri", redirectUri);
+            result.put("state", state);
+            result.put("authUrl", authUrl); // 用于调试
+
+            logger.info("获取微信二维码成功: redirectUri={}, state={}", redirectUri, state);
+            
+            return ApiResponse.success("获取二维码成功", result);
+        } catch (Exception e) {
+            logger.error("获取微信二维码失败", e);
+            String errorMsg = "获取二维码失败: " + e.getMessage();
+            
+            // 提供更详细的错误提示
+            if (e.getMessage() != null && e.getMessage().contains("scope")) {
+                errorMsg += "\n提示：请确认AppID是否为微信开放平台的网站应用类型，且已在开放平台配置授权回调域名。";
+            }
+            
+            return ApiResponse.error(errorMsg);
+        }
+    }
 }
 
