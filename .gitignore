@@ -13,3 +13,7 @@ dist/
 build/
 .next/
 out/
+
+backend/target/
+
+backend/src/main/resources/application.yml
